@@ -29,6 +29,8 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class TypedColumn
 {
+    public enum CollectionType {NOT_COLLECTION,MAP,LIST,SET};
+    
     private final Column rawColumn;
 
     // we cache the frequently-accessed forms: java object for value, String for name.
@@ -37,10 +39,17 @@ public class TypedColumn
     private final Object value;
     private final String nameString;
     private final AbstractJdbcType<?> nameType, valueType;
+    private final CollectionType collectionType;
+    
 
     public TypedColumn(Column column, AbstractJdbcType<?> comparator, AbstractJdbcType<?> validator)
     {
+        this(column,comparator, validator,CollectionType.NOT_COLLECTION);
+    }
+    public TypedColumn(Column column, AbstractJdbcType<?> comparator, AbstractJdbcType<?> validator, CollectionType type)
+    {
         rawColumn = column;
+        this.collectionType = type;
         this.value = column.value == null ? null : validator.compose(column.value);
         nameString = comparator.getString(column.name);
         nameType = comparator;
@@ -76,15 +85,22 @@ public class TypedColumn
     {
         return valueType;
     }
+    
+    public CollectionType getCollectionType()
+    {
+        return collectionType;
+    }
+    
 
     public String toString()
     {
-        return String.format("TypedColumn [rawColumn=%s, value=%s, nameString=%s, nameType=%s, valueType=%s]",
+        return String.format("TypedColumn [rawColumn=%s, value=%s, nameString=%s, nameType=%s, valueType=%s, collectionType=%s]",
             displayRawColumn(rawColumn),
             value,
             nameString,
             nameType,
-            valueType);
+            valueType,
+            collectionType);
     }
     private String displayRawColumn(Column column)
     {

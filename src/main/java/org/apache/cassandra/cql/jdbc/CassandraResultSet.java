@@ -32,6 +32,7 @@ import java.sql.*;
 import java.sql.Date;
 import java.util.*;
 
+import org.apache.cassandra.cql.jdbc.TypedColumn.CollectionType;
 import org.apache.cassandra.thrift.Column;
 import org.apache.cassandra.thrift.CqlMetadata;
 import org.apache.cassandra.thrift.CqlResult;
@@ -686,6 +687,16 @@ class CassandraResultSet extends AbstractResultSet implements CassandraResultSet
         checkNotClosed();
         Object value = column.getValue();
         wasNull = value == null;
+        
+        if (value instanceof String)
+        {
+            switch (column.getCollectionType())
+            {
+                case LIST: break;
+                case MAP: break;
+                case SET: break;
+            }
+        }
         return (wasNull) ? null : value;
     }
 
@@ -964,29 +975,43 @@ class CassandraResultSet extends AbstractResultSet implements CassandraResultSet
             return false;
         }
     }
-
-    private TypedColumn createColumn(Column column)
+    
+    private String bbToString(ByteBuffer buffer)
     {
-        assert column != null;
-        assert column.name != null;
-        
-        String columnname=null;
-        
         try
         {
-            columnname = string(column.name);
+            return string(buffer);
         }
         catch (CharacterCodingException e)
         {
             throw new RuntimeException(e);
         }
         
+    }
+
+    private TypedColumn createColumn(Column column)
+    {
+        assert column != null;
+        assert column.name != null;
+        
         String nameType = schema.name_types.get(column.name);
         if (nameType==null) nameType = "AsciiType";
         AbstractJdbcType<?> comparator = TypesMap.getTypeForComparator(nameType == null ? schema.default_name_type : nameType);
         String valueType = schema.value_types.get(column.name);
         AbstractJdbcType<?> validator = TypesMap.getTypeForComparator(valueType == null ? schema.default_value_type : valueType);
-        nameType = columnname;
+        CollectionType type = CollectionType.NOT_COLLECTION;
+        if (validator == null)
+        {
+            if (valueType.equals("ListType") ||valueType.equals("SetType") || valueType.equals("MapType"))
+            {
+                System.out.println(bbToString(column.value));
+                validator = JdbcAscii.instance;
+                if (valueType.equals("ListType")) type = CollectionType.LIST;
+                else if (valueType.equals("SetType")) type = CollectionType.SET;
+                else if (valueType.equals("MapType")) type = CollectionType.MAP;
+            }
+        }
+        
         return new TypedColumn(column, comparator, validator);
     }
 
