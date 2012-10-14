@@ -77,7 +77,7 @@ public class CollectionsTest
         catch (Exception e){/* Exception on DROP is OK */}
 
         // Create KeySpace
-        String createKS = String.format("CREATE KEYSPACE %s WITH strategy_class = SimpleStrategy AND strategy_options:replication_factor = 1;",KEYSPACE);
+        String createKS = String.format("CREATE KEYSPACE %s WITH replication = { 'class' : 'SimpleStrategy',  'replication_factor' : 1 }",KEYSPACE);
         LOG.debug("createKS    = '{}'",createKS);
         
         stmt = con.createStatement();
@@ -90,7 +90,7 @@ public class CollectionsTest
         String createTable = 
                         "CREATE TABLE testcollection ("
                         + " k int PRIMARY KEY," 
-                        + " L list<float>,"
+                        + " L list<ascii>,"
                         + " M map<double, boolean>,"
                         + " S set<text>"
                         + ") ;";
@@ -121,7 +121,7 @@ public class CollectionsTest
     {
         Statement statement = con.createStatement();
         
-        String insert = "INSERT INTO testcollection (k,L) VALUES( 1,[1.0, 3.0, 5.0]);";
+        String insert = "INSERT INTO testcollection (k,L) VALUES( 1,['1', '3', '12345']);";
         statement.executeUpdate(insert);
         
         String update1 = "UPDATE testcollection SET S = {'red', 'white', 'blue'} WHERE k = 1;";

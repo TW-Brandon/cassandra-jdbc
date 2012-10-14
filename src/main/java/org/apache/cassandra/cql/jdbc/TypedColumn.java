@@ -38,22 +38,32 @@ public class TypedColumn
     // (a good example is byte buffers).
     private final Object value;
     private final String nameString;
-    private final AbstractJdbcType<?> nameType, valueType;
+    private final AbstractJdbcType<?> nameType, valueType, keyType;
     private final CollectionType collectionType;
     
 
     public TypedColumn(Column column, AbstractJdbcType<?> comparator, AbstractJdbcType<?> validator)
     {
-        this(column,comparator, validator,CollectionType.NOT_COLLECTION);
+        this(column,comparator, validator, null, CollectionType.NOT_COLLECTION);
     }
-    public TypedColumn(Column column, AbstractJdbcType<?> comparator, AbstractJdbcType<?> validator, CollectionType type)
+    public TypedColumn(Column column, AbstractJdbcType<?> nameType, AbstractJdbcType<?> valueType, AbstractJdbcType<?> keyType, CollectionType type)
     {
         rawColumn = column;
         this.collectionType = type;
-        this.value = column.value == null ? null : validator.compose(column.value);
-        nameString = comparator.getString(column.name);
-        nameType = comparator;
-        valueType = validator;
+        this.nameType = nameType;
+        this.nameString = nameType.getString(column.name);
+        this.valueType = valueType;
+        this.keyType = keyType;
+        
+        switch(collectionType)
+        {
+            case NOT_COLLECTION:
+                this.value = (column.value == null || !column.value.hasRemaining()) ? null : valueType.compose(column.value);
+                break;
+            default:
+                value = null;
+        }
+        
     }
 
     public Column getRawColumn()
@@ -86,6 +96,12 @@ public class TypedColumn
         return valueType;
     }
     
+        
+    public AbstractJdbcType<?> getKeyType()
+    {
+        return keyType;
+    }
+    
     public CollectionType getCollectionType()
     {
         return collectionType;
@@ -94,12 +110,13 @@ public class TypedColumn
 
     public String toString()
     {
-        return String.format("TypedColumn [rawColumn=%s, value=%s, nameString=%s, nameType=%s, valueType=%s, collectionType=%s]",
+        return String.format("TypedColumn [rawColumn=%s, value=%s, nameString=%s, nameType=%s, valueType=%s, keyType=%s, collectionType=%s]",
             displayRawColumn(rawColumn),
             value,
             nameString,
             nameType,
             valueType,
+            keyType,
             collectionType);
     }
     private String displayRawColumn(Column column)

@@ -994,25 +994,37 @@ class CassandraResultSet extends AbstractResultSet implements CassandraResultSet
         assert column != null;
         assert column.name != null;
         
+        AbstractJdbcType<?> keyType = null;
+        CollectionType type = CollectionType.NOT_COLLECTION;
         String nameType = schema.name_types.get(column.name);
         if (nameType==null) nameType = "AsciiType";
         AbstractJdbcType<?> comparator = TypesMap.getTypeForComparator(nameType == null ? schema.default_name_type : nameType);
         String valueType = schema.value_types.get(column.name);
         AbstractJdbcType<?> validator = TypesMap.getTypeForComparator(valueType == null ? schema.default_value_type : valueType);
-        CollectionType type = CollectionType.NOT_COLLECTION;
         if (validator == null)
         {
-            if (valueType.equals("ListType") ||valueType.equals("SetType") || valueType.equals("MapType"))
+            int index = valueType.indexOf("(");
+            assert index > 0;
+            
+            String collectionClass = valueType.substring(0, index);
+            if (collectionClass.endsWith("ListType")) type = CollectionType.LIST;
+            else if (collectionClass.endsWith("SetType")) type = CollectionType.SET;
+            else if (collectionClass.endsWith("MapType")) type = CollectionType.MAP;
+
+            String[] split = valueType.substring(index+1, valueType.length()-1).split(",");
+            if (split.length > 1)
             {
-                System.out.println(bbToString(column.value));
-                validator = JdbcAscii.instance;
-                if (valueType.equals("ListType")) type = CollectionType.LIST;
-                else if (valueType.equals("SetType")) type = CollectionType.SET;
-                else if (valueType.equals("MapType")) type = CollectionType.MAP;
+                keyType = TypesMap.getTypeForComparator(split[0]);
+                validator = TypesMap.getTypeForComparator(split[1]);
             }
+            else validator = TypesMap.getTypeForComparator(split[0]);
+            
         }
         
-        return new TypedColumn(column, comparator, validator);
+        TypedColumn tc =  new TypedColumn(column, comparator, validator, keyType, type);
+        System.out.println("tc = "+tc);
+        
+        return tc;
     }
 
     public boolean previous() throws SQLException
