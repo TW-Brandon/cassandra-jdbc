@@ -41,7 +41,7 @@ public class TypedColumn<T>
     public TypedColumn(Column column, AbstractJdbcType<T> comparator, AbstractJdbcType<T> validator)
     {
         rawColumn = column;
-        this.value = column.value == null ? null : validator.compose(column.value);
+        this.value = (column.value == null || !column.value.hasRemaining()) ? null : validator.compose(column.value);
         nameString = comparator.getString(column.name);
         nameType = comparator;
         valueType = validator;
