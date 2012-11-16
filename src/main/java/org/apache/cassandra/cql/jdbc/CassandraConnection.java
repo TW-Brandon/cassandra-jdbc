@@ -20,8 +20,35 @@
  */
 package org.apache.cassandra.cql.jdbc;
 
+import static org.apache.cassandra.cql.jdbc.Utils.ALWAYS_AUTOCOMMIT;
+import static org.apache.cassandra.cql.jdbc.Utils.BAD_TIMEOUT;
+import static org.apache.cassandra.cql.jdbc.Utils.NO_INTERFACE;
+import static org.apache.cassandra.cql.jdbc.Utils.NO_TRANSACTIONS;
+import static org.apache.cassandra.cql.jdbc.Utils.PROTOCOL;
+import static org.apache.cassandra.cql.jdbc.Utils.TAG_ACTIVE_CQL_VERSION;
+import static org.apache.cassandra.cql.jdbc.Utils.TAG_CQL_VERSION;
+import static org.apache.cassandra.cql.jdbc.Utils.TAG_DATABASE_NAME;
+import static org.apache.cassandra.cql.jdbc.Utils.TAG_PASSWORD;
+import static org.apache.cassandra.cql.jdbc.Utils.TAG_PORT_NUMBER;
+import static org.apache.cassandra.cql.jdbc.Utils.TAG_SERVER_NAME;
+import static org.apache.cassandra.cql.jdbc.Utils.TAG_USER;
+import static org.apache.cassandra.cql.jdbc.Utils.WAS_CLOSED_CON;
+import static org.apache.cassandra.cql.jdbc.Utils.createSubName;
+import static org.apache.cassandra.cql.jdbc.Utils.determineCurrentKeyspace;
+
 import java.nio.ByteBuffer;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
+import java.sql.SQLClientInfoException;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLInvalidAuthorizationSpecException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLSyntaxErrorException;
+import java.sql.SQLTimeoutException;
+import java.sql.SQLWarning;
+import java.sql.Statement;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,18 +56,26 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.cassandra.thrift.*;
+import org.apache.cassandra.thrift.AuthenticationException;
+import org.apache.cassandra.thrift.AuthenticationRequest;
+import org.apache.cassandra.thrift.AuthorizationException;
+import org.apache.cassandra.thrift.Cassandra;
+import org.apache.cassandra.thrift.Compression;
+import org.apache.cassandra.thrift.CqlPreparedResult;
+import org.apache.cassandra.thrift.CqlResult;
+import org.apache.cassandra.thrift.InvalidRequestException;
+import org.apache.cassandra.thrift.SchemaDisagreementException;
+import org.apache.cassandra.thrift.TimedOutException;
+import org.apache.cassandra.thrift.UnavailableException;
+import org.apache.cassandra.transport.SimpleClient;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.transport.TFramedTransport;
 import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.transport.TTransport;
-
-import static org.apache.cassandra.cql.jdbc.Utils.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Implementation class for {@link Connection}.
@@ -81,6 +116,7 @@ class CassandraConnection extends AbstractConnection implements Connection
 
     private Cassandra.Client client;
     private TTransport transport;
+    private SimpleClient simpleClient;
 
     protected long timeOfLastFailure = 0;
     protected int numFailures = 0;
