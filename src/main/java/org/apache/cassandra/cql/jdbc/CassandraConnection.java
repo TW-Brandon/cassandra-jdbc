@@ -36,6 +36,7 @@ import static org.apache.cassandra.cql.jdbc.Utils.WAS_CLOSED_CON;
 import static org.apache.cassandra.cql.jdbc.Utils.createSubName;
 import static org.apache.cassandra.cql.jdbc.Utils.determineCurrentKeyspace;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -56,6 +57,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
 
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.thrift.AuthenticationException;
 import org.apache.cassandra.thrift.AuthenticationRequest;
 import org.apache.cassandra.thrift.AuthorizationException;
@@ -68,6 +70,7 @@ import org.apache.cassandra.thrift.SchemaDisagreementException;
 import org.apache.cassandra.thrift.TimedOutException;
 import org.apache.cassandra.thrift.UnavailableException;
 import org.apache.cassandra.transport.SimpleClient;
+import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.thrift.protocol.TProtocol;
@@ -115,6 +118,7 @@ class CassandraConnection extends AbstractConnection implements Connection
     private Set<Statement> statements = new ConcurrentSkipListSet<Statement>();
 
     private Cassandra.Client client;
+    private SimpleClient cqlClient;
     private TTransport transport;
     private SimpleClient simpleClient;
 
@@ -157,6 +161,11 @@ class CassandraConnection extends AbstractConnection implements Connection
             TProtocol protocol = new TBinaryProtocol(transport);
             client = new Cassandra.Client(protocol);
             socket.open();
+
+            cqlClient = new SimpleClient(host, 9042);
+            cqlClient.connect(false);
+
+            cqlClient.execute("use rhq;", ConsistencyLevel.ONE);
             
             cluster = client.describe_cluster_name();
 
@@ -182,6 +191,10 @@ class CassandraConnection extends AbstractConnection implements Connection
 
             Object[] args = {host, port,currentKeyspace,cluster,version};
             logger.debug("Connected to {}:{} in Cluster '{}' using Keyspace '{}' and CQL version '{}'",args);                       
+        }
+        catch (IOException e)
+        {
+            throw new SQLException(e);
         }
         catch (InvalidRequestException e)
         {
@@ -478,16 +491,18 @@ class CassandraConnection extends AbstractConnection implements Connection
     {
         currentKeyspace = determineCurrentKeyspace(queryStr, currentKeyspace);
 
-        try
-        {
-            return client.execute_cql_query(Utils.compressQuery(queryStr, compression), compression);
-        }
-        catch (TException error)
-        {
-            numFailures++;
-            timeOfLastFailure = System.currentTimeMillis();
-            throw error;
-        }
+//        try
+//        {
+            ResultMessage resultMessage = cqlClient.execute(queryStr, ConsistencyLevel.ONE);
+            return resultMessage.toThriftResult();
+//            return client.execute_cql_query(Utils.compressQuery(queryStr, compression), compression);
+//        }
+//        catch (TException error)
+//        {
+//            numFailures++;
+//            timeOfLastFailure = System.currentTimeMillis();
+//            throw error;
+//        }
     }
 
     /**
@@ -521,19 +536,25 @@ class CassandraConnection extends AbstractConnection implements Connection
             throw error;
         }
     }
+
+    protected ResultMessage execute(ResultMessage.Prepared prepared, List<ByteBuffer> values) {
+        return cqlClient.executePrepared(prepared.statementId.bytes, values, ConsistencyLevel.ONE);
+    }
     
     protected CqlPreparedResult prepare(String queryStr, Compression compression)throws InvalidRequestException, TException
     {
-        try
-        {
-            return client.prepare_cql_query(Utils.compressQuery(queryStr, compression), compression);
-        }
-        catch (TException error)
-        {
-            numFailures++;
-            timeOfLastFailure = System.currentTimeMillis();
-            throw error;
-        }
+//        try
+//        {
+            ResultMessage.Prepared result = cqlClient.prepare(queryStr);
+            return result.toThriftPreparedResult();
+//            return client.prepare_cql_query(Utils.compressQuery(queryStr, compression), compression);
+//        }
+//        catch (TException error)
+//        {
+//            numFailures++;
+//            timeOfLastFailure = System.currentTimeMillis();
+//            throw error;
+//        }
     }
     
     protected CqlPreparedResult prepare(String queryStr) throws InvalidRequestException, TException
@@ -548,6 +569,10 @@ class CassandraConnection extends AbstractConnection implements Connection
             timeOfLastFailure = System.currentTimeMillis();
             throw error;
         }
+    }
+
+    protected ResultMessage.Prepared prepareCQL(String query) {
+        return cqlClient.prepare(query);
     }
     
     /**
